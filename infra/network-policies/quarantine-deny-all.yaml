@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quarantine-deny-all
+  namespace: demo-app
+spec:
+  podSelector:
+    matchLabels:
+      cloudquarantine/status: quarantined
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
