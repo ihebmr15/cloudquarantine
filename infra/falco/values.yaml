@@ -1,0 +1,9 @@
+falcosidekick:
+  enabled: true
+
+  webui:
+    enabled: true
+
+  config:
+    webhook:
+      address: "http://host.docker.internal:8000/api/v1/webhook/falco"
