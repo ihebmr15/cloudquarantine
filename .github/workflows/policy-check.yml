@@ -1,0 +1,21 @@
+name: Policy Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate-kubernetes-yaml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate YAML files exist
+        run: |
+          test -f infra/network-policies/quarantine-deny-all.yaml
+          echo "Policy files found"
