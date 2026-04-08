@@ -1,7 +1,6 @@
 import json
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from app.db import SessionLocal
 from app.models.incident_db import IncidentRecord
@@ -10,24 +9,15 @@ from app.response.quarantine import quarantine_pod_from_event
 router = APIRouter(tags=["incidents"])
 
 
-class ApprovalRequest(BaseModel):
-    action: str
-
-
-def get_incident_row(incident_id: str):
-    db = SessionLocal()
-    try:
-        row = db.query(IncidentRecord).filter(IncidentRecord.id == incident_id).first()
-        return row
-    finally:
-        db.close()
+def get_incident_row(db, incident_id: str):
+    return db.query(IncidentRecord).filter(IncidentRecord.id == incident_id).first()
 
 
 @router.post("/incidents/{incident_id}/approve")
-async def approve_incident(incident_id: str, payload: ApprovalRequest) -> dict:
+async def approve_incident(incident_id: str) -> dict:
     db = SessionLocal()
     try:
-        row = db.query(IncidentRecord).filter(IncidentRecord.id == incident_id).first()
+        row = get_incident_row(db, incident_id)
 
         if not row:
             raise HTTPException(status_code=404, detail="Incident not found")
@@ -40,15 +30,13 @@ async def approve_incident(incident_id: str, payload: ApprovalRequest) -> dict:
 
         event = json.loads(row.event_json)
 
-        row.approval_state = "approved"
-        row.approved_action = payload.action
+        # ALWAYS quarantine when approved
+        response_result = quarantine_pod_from_event(event)
 
-        if payload.action == "quarantine":
-            response_result = quarantine_pod_from_event(event)
-            row.response_json = json.dumps(response_result)
-            row.status = "contained"
-        else:
-            row.status = "reviewed"
+        row.approval_state = "approved"
+        row.approved_action = "quarantine"
+        row.status = "contained"
+        row.response_json = json.dumps(response_result)
 
         db.commit()
         db.refresh(row)
@@ -57,16 +45,11 @@ async def approve_incident(incident_id: str, payload: ApprovalRequest) -> dict:
             "approved": True,
             "incident": {
                 "id": row.id,
-                "timestamp": row.timestamp,
                 "status": row.status,
                 "approval_state": row.approval_state,
-                "event": json.loads(row.event_json),
-                "decision": json.loads(row.decision_json),
-                "response": json.loads(row.response_json),
-                "review_result": row.review_result,
-                "approved_action": row.approved_action,
             },
         }
+
     finally:
         db.close()
 
@@ -75,7 +58,7 @@ async def approve_incident(incident_id: str, payload: ApprovalRequest) -> dict:
 async def reject_incident(incident_id: str) -> dict:
     db = SessionLocal()
     try:
-        row = db.query(IncidentRecord).filter(IncidentRecord.id == incident_id).first()
+        row = get_incident_row(db, incident_id)
 
         if not row:
             raise HTTPException(status_code=404, detail="Incident not found")
@@ -97,15 +80,10 @@ async def reject_incident(incident_id: str) -> dict:
             "rejected": True,
             "incident": {
                 "id": row.id,
-                "timestamp": row.timestamp,
                 "status": row.status,
                 "approval_state": row.approval_state,
-                "event": json.loads(row.event_json),
-                "decision": json.loads(row.decision_json),
-                "response": json.loads(row.response_json),
-                "review_result": row.review_result,
-                "approved_action": row.approved_action,
             },
         }
+
     finally:
         db.close()

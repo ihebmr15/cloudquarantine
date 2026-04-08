@@ -21,26 +21,25 @@ def is_noise_event(payload: dict) -> bool:
     container = fields.get("container.name")
     rule = payload.get("rule", "")
 
-    # 1. Drop events without K8s metadata
-    if not pod or not namespace:
-        return True
-
-    # 2. Drop controller itself
-    if "cloudquarantine-controller" in pod:
-        return True
-
+    # Skip controller self-noise
     if container == "controller":
         return True
 
-    # 3. Drop system namespaces
+    # Skip events with no Kubernetes metadata at all
+    if not pod and not namespace:
+        return True
+
+    # Skip system namespaces
     if namespace in ["default", "kube-system", "kube-public", "security-monitoring"]:
         return True
 
-    # 4. Drop K8s API communication noise
+    # Skip controller / API communication noise
     if rule == "Contact K8S API Server From Container":
         return True
 
     return False
+
+
 @router.post("/webhook/falco")
 async def falco_webhook(payload: dict) -> dict:
     print("\n============================")
@@ -49,20 +48,17 @@ async def falco_webhook(payload: dict) -> dict:
     print("Payload:")
     print(pformat(payload, sort_dicts=False))
 
-    # 🚨 FIRST: FILTER (must be FIRST)
+    # 1) Filter noise first
     if is_noise_event(payload):
         print("\n[FILTER] Ignored noise event")
         print("============================\n")
-        return {"status": "ignored"}
+        return {
+            "received": True,
+            "ignored": True,
+            "message": "noise event ignored",
+        }
 
-    # 🚨 SECOND: DEDUP
-    if is_duplicate_event(payload):
-        print("\n[DEDUP] Duplicate event skipped")
-        print("============================\n")
-        return {"status": "duplicate"}
-
-    # THEN decision engine
-    decision = evaluate_event(payload)
+    # 2) Deduplicate second
     if is_duplicate_event(payload):
         print("\n[DEDUP] Duplicate event skipped")
         print("============================\n")
@@ -72,6 +68,7 @@ async def falco_webhook(payload: dict) -> dict:
             "message": "duplicate event skipped",
         }
 
+    # 3) Evaluate decision
     decision = evaluate_event(payload)
 
     print("\n[Decision Engine Output]")
@@ -79,7 +76,7 @@ async def falco_webhook(payload: dict) -> dict:
 
     response_result = {
         "status": "no_action",
-        "message": "no action executed"
+        "message": "no action executed",
     }
 
     # Automatic mode: execute quarantine immediately
@@ -95,7 +92,7 @@ async def falco_webhook(payload: dict) -> dict:
         print("\n[MODE] MANUAL REVIEW → Alert only, no quarantine")
         response_result = {
             "status": "alert_only",
-            "message": "manual review required"
+            "message": "manual review required",
         }
 
     # Low risk: log only
@@ -103,7 +100,7 @@ async def falco_webhook(payload: dict) -> dict:
         print("\n[MODE] LOG ONLY → No action")
         response_result = {
             "status": "logged",
-            "message": "low risk event logged"
+            "message": "low risk event logged",
         }
 
     print("\n[Response Result]")

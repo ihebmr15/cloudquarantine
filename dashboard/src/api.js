@@ -1,26 +1,39 @@
-const API = "http://localhost:8000/api/v1";
+const API_BASE_URL = "http://localhost:8000/api/v1";
+
+async function handleResponse(response) {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API error ${response.status}: ${text}`);
+  }
+  return response.json();
+}
 
 export async function getIncidents() {
-  const res = await fetch(`${API}/incidents`);
-  if (!res.ok) throw new Error("Failed to fetch incidents");
-  return res.json();
+  const response = await fetch(`${API_BASE_URL}/incidents`);
+  return handleResponse(response);
 }
 
-export async function approveIncident(id) {
-  const res = await fetch(`${API}/incidents/${id}/approve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "quarantine" }),
-  });
-  if (!res.ok) throw new Error("Failed to approve incident");
-  return res.json();
+export async function getTimeline() {
+  const response = await fetch(`${API_BASE_URL}/incidents/timeline`);
+  return handleResponse(response);
 }
 
-export async function rejectIncident(id) {
-  const res = await fetch(`${API}/incidents/${id}/reject`, {
+export async function approveIncident(incidentId) {
+  const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/approve`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
   });
-  if (!res.ok) throw new Error("Failed to reject incident");
-  return res.json();
+  return handleResponse(response);
+}
+
+export async function rejectIncident(incidentId) {
+  const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/reject`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return handleResponse(response);
 }

@@ -1,0 +1,39 @@
+metadata:
+  name: dev-policy
+  version: "1.0"
+
+spec:
+  thresholds:
+    alert_only: 20
+    manual_review: 50
+    auto_quarantine: 120
+
+  scoring:
+    max_score: 200
+    signals:
+      shell_spawned: 40
+      root_user: 20
+      execve: 15
+      privileged_container: 25
+      hostpath_mount: 20
+      secret_mount: 10
+      criticality_high: 30
+
+  response_profiles:
+    manual_review:
+      send_alert: true
+      label_pod: false
+      apply_network_policy: false
+      persist_incident: true
+
+    auto_quarantine:
+      send_alert: true
+      label_pod: true
+      apply_network_policy: true
+      persist_incident: true
+
+    alert_only:
+      send_alert: true
+      label_pod: false
+      apply_network_policy: false
+      persist_incident: true

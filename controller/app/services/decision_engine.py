@@ -2,7 +2,7 @@ from app.policies.loader import load_policy
 from app.policies.evaluator import evaluate_policy
 from app.policies.models import NormalizedEvent, WorkloadContext
 from app.kube.workload_profile import get_workload_profile
-
+from app.policies.policy_selector import select_policy_file
 
 def decide_incident(payload: dict) -> dict:
     output_fields = payload.get("output_fields", {}) or {}
@@ -44,9 +44,11 @@ def decide_incident(payload: dict) -> dict:
         owner_name=profile.get("owner_name"),
     )
 
-    policy = load_policy()
-    decision = evaluate_policy(normalized_event, workload_context, policy)
+    policy_file = select_policy_file(namespace)
+    policy = load_policy(policy_file)
+    print(f"[POLICY] namespace={namespace} -> {policy.metadata.name}")
 
+    decision = evaluate_policy(normalized_event, workload_context, policy)
     # Map policy action into your app response format
     action_map = {
         "auto_quarantine": {

@@ -1,20 +1,34 @@
-import os
-import yaml
 from pathlib import Path
-from .models import RuntimeResponsePolicy
-
-DEFAULT_POLICY_PATH = "policies/cloudquarantine-policies.yaml"
-FALLBACK_POLICY_PATH = Path(__file__).parent / "defaults" / "policies.yaml"
+import yaml
 
 
-def load_policy() -> RuntimeResponsePolicy:
-    policy_path = os.getenv("CQ_POLICY_PATH", DEFAULT_POLICY_PATH)
+class AttrDict(dict):
+    def __init__(self, data):
+        super().__init__()
+        for key, value in data.items():
+            self[key] = self._wrap(value)
 
-    if os.path.exists(policy_path):
-        with open(policy_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-        return RuntimeResponsePolicy.model_validate(raw)
+    def _wrap(self, value):
+        if isinstance(value, dict):
+            return AttrDict(value)
+        if isinstance(value, list):
+            return [self._wrap(v) for v in value]
+        return value
 
-    with open(FALLBACK_POLICY_PATH, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    return RuntimeResponsePolicy.model_validate(raw)
+    def __getattr__(self, item):
+        if item in self:
+            return self[item]
+        raise AttributeError(f"AttrDict has no attribute '{item}'")
+
+
+def load_policy(policy_path: str | None = None):
+    if policy_path is None:
+        policy_path = Path(__file__).resolve().parent / "policies" / "dev.yaml"
+
+    with open(policy_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError("Policy file must contain a top-level YAML mapping")
+
+    return AttrDict(data)

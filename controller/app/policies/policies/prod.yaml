@@ -1,0 +1,39 @@
+metadata:
+  name: prod-policy
+  version: "1.0"
+
+spec:
+  thresholds:
+    alert_only: 10
+    manual_review: 35
+    auto_quarantine: 80
+
+  scoring:
+    max_score: 200
+    signals:
+      shell_spawned: 50
+      root_user: 30
+      execve: 20
+      privileged_container: 30
+      hostpath_mount: 25
+      secret_mount: 15
+      criticality_high: 40
+
+  response_profiles:
+    manual_review:
+      send_alert: true
+      label_pod: false
+      apply_network_policy: false
+      persist_incident: true
+
+    auto_quarantine:
+      send_alert: true
+      label_pod: true
+      apply_network_policy: true
+      persist_incident: true
+
+    alert_only:
+      send_alert: true
+      label_pod: false
+      apply_network_policy: false
+      persist_incident: true
