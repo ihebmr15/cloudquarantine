@@ -191,5 +191,3 @@ To showcase CloudQuarantine end‑to‑end:
 * **Dashboard shows “Failed to fetch”** — ensure the controller (`cloudquarantine-controller`) is running and accessible from the UI.
 
 ---
-
-With this guide and the updated README, new users should be able to install, understand and extend CloudQuarantine with confidence.
