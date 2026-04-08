@@ -1,193 +1,364 @@
-# 📘 CloudQuarantine User Guide
-
-This guide explains how to install, configure and operate the **CloudQuarantine** platform.  It targets operators who want to deploy the system in their own clusters, as well as developers looking to customise policies and response playbooks.
-
+📘 CloudQuarantine User Guide
+This guide explains how to install, run, test, and understand CloudQuarantine.
+It is written for users who want to:
+deploy the project locally
+trigger demo incidents
+understand how the system reacts
+explore the dashboard and response flow
 ---
-
-## 1 – Prerequisites
-
-* **Kubernetes cluster**: tested with [k3d](https://k3d.io/) but works with any Kubernetes 1.21+.
-* **Helm 3** for deploying the chart.
-* **Docker** to build images if you modify code.
-* **kubectl** configured to talk to your cluster.
-* **Telegram bot token & chat ID** if you want Telegram notifications (optional).
-
+1. What is CloudQuarantine?
+CloudQuarantine is a Kubernetes runtime security system.
+A simple way to think about it:
+Falco is the detector
+CloudQuarantine is the decision-maker and responder
+Falco notices suspicious behavior.  
+CloudQuarantine decides what that behavior means and what to do next.
+So instead of only saying:
+> “something suspicious happened”
+the system can say:
+> “this is medium risk, show it for manual review”
+or
+> “this is high risk, isolate it now”
 ---
-
-## 2 – Installation
-
-### 2.1  Set up a local k3d cluster (optional)
-
-```bash
-# create a three-node k3d cluster called 'cloudquarantine'
-k3d cluster create cloudquarantine --servers 1 --agents 2 \
-  --k3s-server-arg "--disable=traefik" \
-  --k3s-server-arg "--disable=servicelb"
-```
-
-### 2.2  Install Falco & Falcosidekick
-
-Use the [Falco helm chart](https://github.com/falcosecurity/charts):
-
-```bash
-helm repo add falcosecurity https://falcosecurity.github.io/charts
-helm repo update
-helm install falco falcosecurity/falco \
-  --namespace security-monitoring --create-namespace \
-  --set falcosidekick.enabled=true \
-  --set falcosidekick.webui.enabled=true
-```
-
-> Falcosidekick will forward events to the CloudQuarantine controller.
-
-### 2.3  Deploy CloudQuarantine
-
-Clone the repository and update values:
-
-```bash
-git clone https://github.com/ihebmr15/cloudquarantine.git
-cd cloudquarantine/helm/cloudquarantine
-
-# edit values.yaml to set environment:
-# env:
-#   APP_ENV: prod
-#   RESPONSE_MODE: enforce
-#   TELEGRAM_CHAT_ID: "your-chat-id"
-#   DATABASE_URL: "postgresql://user:pass@hostname:5432/cloudquarantine"
-#   CQ_POLICY_PATH: "/policies/prod-policy.yaml"
-
-helm install cloudquarantine . \
-  --namespace cloudquarantine --create-namespace
-```
-
-If you modify the controller code:
-
-```bash
-docker build --no-cache -t cloudquarantine/controller:latest ../controller
-k3d image import cloudquarantine/controller:latest -c cloudquarantine
-helm upgrade --install cloudquarantine .
-```
-
+2. What the system is made of
+The platform has several parts working together:
+Falco
+Watches runtime activity inside containers and detects suspicious behavior.
+Falcosidekick
+Forwards Falco events to the controller.
+CloudQuarantine Controller
+Receives events, filters them, scores them, and decides what action to take.
+Decision Engine
+Calculates incident risk based on rules and workload context.
+Behavior Layer
+Raises the score when suspicious behavior repeats.
+Response Engine
+Executes actions such as:
+alerting
+labeling pods
+isolating network traffic
+scaling deployments to zero
+Dashboard
+Shows incidents, decisions, AI insights, and manual approval actions.
+Telegram Integration
+Sends incident summaries in real time.
 ---
-
-## 3 – Configuration
-
-### 3.1  Runtime policies
-
-Policies live under `controller/policies`.  Use `prod-policy.yaml` or create your own:
-
-* **thresholds**: base score triggers auto‑quarantine, manual review or dismiss.
-* **signals**: per‑signal score boosts (shell spawn, root user, execve, privileged container, hostPath mount, secret mounts, critical workloads).
-* **namespace_rules** & **workload_rules**: apply additional score boosts or enforce manual review for specific namespaces, labels or conditions.
-* **safety_guards**: prevent auto‑quarantine in system namespaces, require manual review for critical workloads, or avoid isolating single replicas.
-* **response_profiles**: define what actions to take for each decision (`send_alert`, `label_pod`, `apply_network_policy`, `persist_incident`).
-
-Update `values.yaml` to point `CQ_POLICY_PATH` at your policy file.
-
-### 3.2  Environment variables
-
-* `APP_ENV`: `dev` (monitor only) or `prod` (enforce).
-* `RESPONSE_MODE`: `monitor` (no quarantine) or `enforce`.
-* `TELEGRAM_CHAT_ID`: the chat ID for Telegram alerts.
-* `TELEGRAM_BOT_TOKEN`: stored in a Kubernetes `Secret`.
-* `DATABASE_URL`: PostgreSQL connection string.
-* `CQ_POLICY_PATH`: path to policy file inside the controller container.
-
-### 3.3  NetworkPolicy template
-
-The built‑in response engine applies a `NetworkPolicy` named `quarantine-deny-all` in the target namespace.  Adjust `controller/app/kube/network_policy_ops.py` if you need a custom isolation rule.
-
+3. Prerequisites
+Before using CloudQuarantine, make sure you have:
+Docker
+kubectl
+k3d
+Helm
+Node.js and npm
+access to a Kubernetes cluster (local k3d is enough for demo)
+a Telegram bot token and chat ID if you want alerts
 ---
-
-## 4 – Usage
-
-### 4.1  Trigger an attack
-
-Create a test pod and open a shell to simulate suspicious activity:
-
+4. Start the environment
+Step 1 — Create a cluster
 ```bash
-# demo namespace
-kubectl create ns demo-app --dry-run=client -o yaml | kubectl apply -f -
+k3d cluster create cloudquarantine
+```
+Check that it is running:
+```bash
+kubectl get nodes
+```
+---
+Step 2 — Deploy CloudQuarantine
+From the project root:
+```bash
+helm upgrade --install cloudquarantine helm/cloudquarantine
+```
+Check deployed resources:
+```bash
+kubectl get pods
+kubectl get svc
+```
+You should see the controller and supporting components running.
+---
+Step 3 — Start the dashboard
+Go to the dashboard folder:
+```bash
+cd dashboard
+npm install
+npm start
+```
+Open the browser at:
+```text
+http://localhost:3000
+```
+If your backend is inside Kubernetes and not directly exposed, also forward the API port:
+```bash
+kubectl port-forward svc/cloudquarantine-controller 8000:8000
+```
+---
+5. Configure Telegram alerts
+CloudQuarantine can send Telegram alerts for incidents.
+You need:
+`TELEGRAM_BOT_TOKEN`
+`TELEGRAM_CHAT_ID`
+These are usually configured through the Helm chart.
+Make sure your values file contains the real token, not a placeholder.
+Example:
+```yaml
+secretEnv:
+  TELEGRAM_BOT_TOKEN: "your-real-bot-token"
+
+env:
+  TELEGRAM_CHAT_ID: "your-chat-id"
+```
+After updating values, redeploy:
+```bash
+helm upgrade --install cloudquarantine helm/cloudquarantine
+kubectl rollout restart deployment/cloudquarantine-controller
+kubectl rollout status deployment/cloudquarantine-controller
+```
+To verify:
+```bash
+kubectl get secret cloudquarantine-secrets -o jsonpath='{.data.TELEGRAM_BOT_TOKEN}' | base64 -d && echo
+kubectl exec -it deploy/cloudquarantine-controller -- printenv | grep TELEGRAM
+```
+If configured correctly, alerts should reach Telegram with status `200`.
+---
+6. How the system thinks
+When a Falco event arrives, CloudQuarantine goes through these steps:
+1. Receive the event
+The controller receives the webhook payload.
+2. Filter noise
+It ignores:
+empty events
+internal controller activity
+system noise
+known irrelevant events
+3. Deduplicate
+If the same event appears multiple times from Falco/Falcosidekick replicas, duplicates are skipped.
+4. Enrich workload context
+The system asks Kubernetes for more information:
+namespace
+pod name
+labels
+service account
+privilege level
+volume types
+owner kind
+replicas
+deployment ownership
+5. Score the risk
+The policy engine assigns a score using:
+rule type
+root usage
+shell execution
+namespace rules
+workload rules
+6. Apply behavior analysis
+The AI layer may increase the score if:
+the same pod shows repeated suspicious activity
+the namespace becomes noisy
+suspicious behavior continues after containment
+7. Decide response mode
+Depending on the final score and safety guards, the system chooses:
+log only
+manual review
+automatic quarantine
+8. Execute response
+If needed, the response engine:
+labels the pod
+applies deny-all network isolation
+scales the deployment to zero
+9. Persist and alert
+The incident is saved, shown in the dashboard, and optionally sent to Telegram.
+---
+7. Run your first test
+Create a test namespace
+```bash
+kubectl create namespace demo-app
+```
+Create a demo pod
+```bash
 kubectl run test-shell --image=busybox --restart=Never -n demo-app -- sleep 3600
-kubectl exec -it test-shell -n demo-app -- sh
-# inside the container, just type 'ls /' or run any command, then exit
 ```
-
-Falco will emit an event that CloudQuarantine interprets as a shell spawn with root privileges.
-
-### 4.2  Observe system reaction
-
-1. **Falco** logs the event.
-2. **Falcosidekick** forwards it to the controller.
-3. **Decision Engine** calculates a score; if thresholds dictate, it chooses manual review or automatic quarantine.
-4. **Response Engine** executes the playbook:
-
-   * labels the pod with `cloudquarantine/status=quarantined`.
-   * applies the `quarantine-deny-all` `NetworkPolicy` in the namespace (automatic mode).
-   * scales the Deployment to zero if `advanced quarantine` is enabled for multi‑replica workloads.
-
-### 4.3  Verify isolation
-
-In automatic mode you should see:
-
+Trigger a shell event
 ```bash
-kubectl exec test-shell -n demo-app -- wget -O- http://kubernetes.default
-# -> Connection refused
-
-# Another pod in the namespace:
-kubectl run network-check --image=busybox -n demo-app --restart=Never \
-  -- wget -O- http://kubernetes.default
-# -> Success (not quarantined)
+kubectl exec -it test-shell -n demo-app -- sh
 ```
-
-In manual review mode the controller logs will show **[MODE] MANUAL REVIEW → Alert only, no quarantine** and the pod will not be isolated until you approve it.
-
+Exit the shell:
+```sh
+exit
+```
 ---
-
-## 5 – Dashboard
-
-Run `npm install && npm start` inside `dashboard/` to launch the React UI (it uses `vite`).  The dashboard features:
-
-* **Incidents list** with filters (status, severity, namespace).
-* **Score & AI insights** — repeated pod or namespace activity adds a visible **(+20 AI boost)** next to the score.
-* **Decision mode** clearly labelled (“Automatic” or “Manual review”).
-* **Approval state with icons**: 🟢 approved, 🔴 contained, 🟡 waiting (manual review).
-* **Manual approval buttons** to approve or reject quarantines.
-* **Human‑readable timeline** for each incident, plus the original Falco JSON for deeper inspection.
-
+8. What you should expect
+After that command:
+Falco detects the shell
+the controller receives the event
+the dashboard shows a new incident
+the score is calculated
+the event is likely marked manual review in `demo-app`
+This is the normal behavior for a lower-risk environment.
 ---
-
-## 6 – Customisation
-
-* **Define new Falco rules** to detect additional behaviours (e.g. crypto‑mining).
-* **Write new response playbooks** in `controller/app/response/` for actions beyond labelling and network isolation.
-* **Extend the AI layer** in `controller/app/services/decision_engine.py` to add more signals (e.g. time‑weighted scoring, user behaviour analytics).
-* **Integrate other alerting channels** by implementing `app/alerting/<channel>.py` and updating `values.yaml`.
-* **Tweak the dashboard** (React) to add new insights, charts, or authentication.
-
+9. Test repeated behavior
+To simulate a repeated suspicious pattern, run the same command multiple times:
+```bash
+kubectl exec -it test-shell -n demo-app -- sh
+```
+Do it three or more times.
+Expected result
+The AI behavior layer should detect repetition.
+In the dashboard, you should start seeing things like:
+repeated activity detected on same pod
+namespace shows suspicious activity
+AI score boost
+This proves the system is not relying only on static rules.
 ---
-
-## 7 – Demo Scenario
-
-To showcase CloudQuarantine end‑to‑end:
-
-1. Deploy the system as described above.
-2. Trigger a shell in a pod (`kubectl exec -it test-shell -n demo-app -- sh`).
-3. Watch the controller logs or Telegram chat for the alert.
-4. Navigate to the dashboard at `http://localhost:3000` (default dev port).
-5. Inspect the incident — note the AI insights and that manual review is required.
-6. Click **Approve** to quarantine.  The dashboard will update the pod state and network isolation will take effect.
-7. Try connecting from inside the quarantined pod (expect failure) and from another pod (expect success).
-8. View the timeline at `/api/v1/incidents/timeline` for a chronological view of the event, decision, and response.
-
+10. Test automatic quarantine in production
+Create a production namespace and a pod:
+```bash
+kubectl create namespace prod
+kubectl run test-shell --image=busybox --restart=Never -n prod -- sleep 3600
+```
+Trigger the event:
+```bash
+kubectl exec -it test-shell -n prod -- sh
+```
+Expected result
+Because the event happens in a production namespace, the response should be stronger.
+You should see:
+higher severity
+automatic quarantine
+response result showing network isolation or containment
 ---
-
-## 8 – Troubleshooting
-
-* **No incidents appear** — ensure Falco and Falcosidekick are running and that the controller’s `/api/v1/webhook/falco` endpoint is reachable (check DNS or use `values.yaml` to configure sidekick Webhook).
-* **Telegram errors** — verify `TELEGRAM_BOT_TOKEN` is stored in the Secret and `TELEGRAM_CHAT_ID` is set in `values.yaml`.
-* **Pods never quarantined** — check `RESPONSE_MODE` and policy thresholds.  In `dev` or `monitor` modes the system only logs.
-* **Database errors** — confirm `DATABASE_URL` points to a reachable PostgreSQL instance; you may deploy the included `cq-postgres` helm chart for local testing.
-* **Dashboard shows “Failed to fetch”** — ensure the controller (`cloudquarantine-controller`) is running and accessible from the UI.
-
+11. Test Deployment containment
+Create a Deployment-backed workload:
+```bash
+kubectl create deployment nginx-test --image=nginx -n prod
+kubectl get pods -n prod
+```
+Pick the pod name, then run:
+```bash
+kubectl exec -it <pod-name> -n prod -- sh
+```
+Expected result
+CloudQuarantine should:
+resolve the Deployment owner
+quarantine the workload
+scale the Deployment to zero
+This is one of the strongest demos of the platform.
 ---
+12. Understanding the dashboard
+The dashboard is your main control surface.
+Incident List
+Shows all incidents with:
+severity
+status
+namespace
+pod
+rule
+timestamp
+Filters
+You can filter by:
+status
+severity
+namespace
+Incident Details
+When you click an incident, you see:
+score
+decision mode
+recommended action
+approval state
+matched rules
+reasons
+AI insights
+workload context
+response result
+raw original event
+Manual Review Actions
+If the incident is waiting for human review, you can:
+Approve
+Reject
+These actions update the incident state and, if approved, execute the response.
+---
+13. Approval states explained
+CloudQuarantine uses clear approval states:
+waiting → manual review needed
+approved → action accepted
+rejected → action denied
+not_required → automatic decision, no human step needed
+This helps separate manual workflows from fully automated containment.
+---
+14. Common demo flow
+A clean demo flow is:
+Demo 1 — Manual review
+```bash
+kubectl exec -it test-shell -n demo-app -- sh
+```
+Show:
+medium score
+manual review
+dashboard approval buttons
+Demo 2 — AI escalation
+Repeat the same action several times.
+Show:
+AI insights
+score increase
+repeated pod activity
+Demo 3 — Automatic quarantine
+```bash
+kubectl exec -it test-shell -n prod -- sh
+```
+Show:
+automatic decision
+response result
+Telegram alert
+Demo 4 — Deployment shutdown
+```bash
+kubectl exec -it <nginx-pod> -n prod -- sh
+```
+Show:
+deployment scaling to zero
+stronger containment
+---
+15. Troubleshooting
+No incidents in dashboard
+Check:
+```bash
+kubectl logs deployment/cloudquarantine-controller
+```
+Also verify the frontend can reach the backend:
+```bash
+kubectl port-forward svc/cloudquarantine-controller 8000:8000
+```
+No Telegram alerts
+Check:
+token is correct
+chat ID is correct
+secret was updated by Helm
+controller pod has the correct environment variables
+No quarantine happening
+Check:
+current namespace
+response mode
+policy thresholds
+whether the incident is manual review instead of automatic
+Dashboard says “Failed to fetch”
+Usually the backend is not reachable from the browser. Use:
+```bash
+kubectl port-forward svc/cloudquarantine-controller 8000:8000
+```
+---
+16. Key idea to remember
+CloudQuarantine does not react only to a single event.
+It reacts to:
+the event itself
+the workload context
+the namespace
+the behavior pattern
+the response policy
+That is what makes it stronger than simple runtime detection.
+---
+17. Summary
+CloudQuarantine is a runtime security platform that:
+detects suspicious behavior
+understands context
+analyzes repetition
+decides risk
+responds automatically
+preserves forensic visibility
+It is useful both as a practical project and as a foundation for more advanced Kubernetes security automation.
