@@ -17,10 +17,10 @@ def get_workload_profile(namespace: str, pod_name: str) -> dict:
         "replicas": None,
         "owner_kind": None,
         "owner_name": None,
+        "deployment_name": None,
         "exists": False,
     }
 
-    # If no metadata → return empty profile
     if not namespace or not pod_name:
         return profile
 
@@ -30,42 +30,56 @@ def get_workload_profile(namespace: str, pod_name: str) -> dict:
         pod = api.read_namespaced_pod(name=pod_name, namespace=namespace)
         profile["exists"] = True
 
-        # Labels
         labels = pod.metadata.labels or {}
         profile["labels"] = labels
         profile["criticality_label"] = labels.get("criticality", "unknown")
 
-        # Service account
         profile["service_account"] = pod.spec.service_account_name
 
-        # Privileged containers
         for c in pod.spec.containers or []:
             sc = c.security_context
             if sc and sc.privileged is True:
                 profile["privileged"] = True
 
-        # Volumes
         for v in pod.spec.volumes or []:
             if v.secret is not None:
                 profile["secret_mounts"] += 1
             if v.host_path is not None:
                 profile["host_path_used"] = True
 
-        # Owner references
         owners = pod.metadata.owner_references or []
         if owners:
             owner = owners[0]
             profile["owner_kind"] = owner.kind
             profile["owner_name"] = owner.name
 
-        # Estimate replicas if owned by ReplicaSet
+        apps_api = client.AppsV1Api()
+
+        # If pod is owned by ReplicaSet, try to resolve Deployment
         if profile["owner_kind"] == "ReplicaSet" and profile["owner_name"]:
-            apps_api = client.AppsV1Api()
             rs = apps_api.read_namespaced_replica_set(
                 name=profile["owner_name"],
                 namespace=namespace,
             )
             profile["replicas"] = getattr(rs.spec, "replicas", None)
+
+            rs_owners = rs.metadata.owner_references or []
+            for rs_owner in rs_owners:
+                if rs_owner.kind == "Deployment":
+                    profile["deployment_name"] = rs_owner.name
+                    break
+
+        # If pod is directly owned by Deployment
+        if profile["owner_kind"] == "Deployment" and profile["owner_name"]:
+            profile["deployment_name"] = profile["owner_name"]
+
+        # If deployment resolved, read replicas from deployment
+        if profile["deployment_name"]:
+            deployment = apps_api.read_namespaced_deployment(
+                name=profile["deployment_name"],
+                namespace=namespace,
+            )
+            profile["replicas"] = getattr(deployment.spec, "replicas", None)
 
     except ApiException as e:
         print(f"[WORKLOAD PROFILE] API error: {e}")
