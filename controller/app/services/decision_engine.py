@@ -1,8 +1,10 @@
 from app.policies.loader import load_policy
-from app.policies.evaluator import evaluate_policy
+from app.policies.evaluator import evaluate_policy, derive_action
 from app.policies.models import NormalizedEvent, WorkloadContext
 from app.kube.workload_profile import get_workload_profile
 from app.policies.policy_selector import select_policy_file
+from app.services.behavior_analyzer import analyze_behavior
+
 
 def decide_incident(payload: dict) -> dict:
     output_fields = payload.get("output_fields", {}) or {}
@@ -10,7 +12,6 @@ def decide_incident(payload: dict) -> dict:
     namespace = output_fields.get("k8s.ns.name")
     pod_name = output_fields.get("k8s.pod.name")
 
-    # Build normalized event
     normalized_event = NormalizedEvent(
         rule=payload.get("rule", ""),
         priority=payload.get("priority", ""),
@@ -27,7 +28,6 @@ def decide_incident(payload: dict) -> dict:
         raw=payload,
     )
 
-    # Get workload profile from Kubernetes
     profile = get_workload_profile(namespace, pod_name)
 
     workload_context = WorkloadContext(
@@ -49,7 +49,29 @@ def decide_incident(payload: dict) -> dict:
     print(f"[POLICY] namespace={namespace} -> {policy.metadata.name}")
 
     decision = evaluate_policy(normalized_event, workload_context, policy)
-    # Map policy action into your app response format
+
+    behavior = analyze_behavior(namespace, pod_name)
+
+    if behavior["pod_event_count"] >= 3:
+        decision.score += 20
+        decision.reasons.append("AI: repeated activity from same pod")
+
+    if behavior["namespace_event_count"] >= 5:
+        decision.score += 15
+        decision.reasons.append("AI: noisy namespace detected")
+
+    if behavior["repeated_after_quarantine"]:
+        decision.score += 30
+        decision.reasons.append("AI: activity after quarantine (high risk)")
+
+    max_score = getattr(policy.spec.scoring, "max_score", decision.score)
+    decision.score = min(decision.score, max_score)
+
+    if hasattr(decision, "forced_action") and decision.forced_action:
+        effective_action = decision.forced_action
+    else:
+        effective_action = derive_action(decision.score, policy.spec.thresholds)
+
     action_map = {
         "auto_quarantine": {
             "severity": "high",
@@ -77,7 +99,7 @@ def decide_incident(payload: dict) -> dict:
         },
     }
 
-    mapped = action_map[decision.action]
+    mapped = action_map[effective_action]
 
     result = {
         "score": decision.score,
@@ -88,6 +110,7 @@ def decide_incident(payload: dict) -> dict:
         "reasons": decision.reasons,
         "matched_rules": decision.matched_rules,
         "safety_blocks": decision.safety_blocks,
+        "ai_behavior": behavior,
         "response_profile": decision.response_profile,
         "policy_name": decision.policy_name,
         "policy_version": decision.policy_version,
@@ -102,7 +125,6 @@ def decide_incident(payload: dict) -> dict:
     effective_namespace = workload_profile.get("namespace")
     criticality = workload_profile.get("criticality")
 
-    # Environment-aware overrides
     if effective_namespace in ["prod", "production"]:
         if result["score"] >= 50:
             result["decision_mode"] = "automatic"
@@ -117,7 +139,6 @@ def decide_incident(payload: dict) -> dict:
             result["actions"] = ["alert"]
             result["severity"] = "medium"
 
-    # Critical workload override
     if criticality == "high":
         result["decision_mode"] = "manual_review"
         result["recommended_action"] = "quarantine"
@@ -126,6 +147,5 @@ def decide_incident(payload: dict) -> dict:
     return result
 
 
-# Backward-compatible name if your webhook still imports evaluate_event
 def evaluate_event(payload: dict) -> dict:
     return decide_incident(payload)
