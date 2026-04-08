@@ -16,3 +16,11 @@ class IncidentRecord(Base):
 
     review_result = Column(String, nullable=True)
     approved_action = Column(String, nullable=True)
+
+    # NEW POLICY / EXPLANATION FIELDS
+    policy_name = Column(String, nullable=True)
+    policy_version = Column(String, nullable=True)
+    decision_reasons = Column(Text, nullable=True)
+    matched_rules = Column(Text, nullable=True)
+    safety_blocks = Column(Text, nullable=True)
+    response_profile = Column(Text, nullable=True)

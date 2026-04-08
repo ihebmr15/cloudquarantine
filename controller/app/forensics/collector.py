@@ -23,6 +23,14 @@ def record_event(event, decision, response):
         "event": event,
         "decision": decision,
         "response": response,
+        "review_result": None,
+        "approved_action": None,
+        "policy_name": decision.get("policy_name"),
+        "policy_version": decision.get("policy_version"),
+        "decision_reasons": decision.get("reasons", []),
+        "matched_rules": decision.get("matched_rules", []),
+        "safety_blocks": decision.get("safety_blocks", []),
+        "response_profile": decision.get("response_profile", {}),
     }
 
     db = SessionLocal()
@@ -37,6 +45,12 @@ def record_event(event, decision, response):
             response_json=json.dumps(response),
             review_result=None,
             approved_action=None,
+            policy_name=incident["policy_name"],
+            policy_version=incident["policy_version"],
+            decision_reasons=json.dumps(incident["decision_reasons"]),
+            matched_rules=json.dumps(incident["matched_rules"]),
+            safety_blocks=json.dumps(incident["safety_blocks"]),
+            response_profile=json.dumps(incident["response_profile"]),
         )
         db.add(row)
         db.commit()
@@ -51,6 +65,7 @@ def get_incidents():
     try:
         rows = db.query(IncidentRecord).order_by(IncidentRecord.timestamp.desc()).all()
         incidents = []
+
         for row in rows:
             incidents.append({
                 "id": row.id,
@@ -62,7 +77,14 @@ def get_incidents():
                 "response": json.loads(row.response_json),
                 "review_result": row.review_result,
                 "approved_action": row.approved_action,
+                "policy_name": row.policy_name,
+                "policy_version": row.policy_version,
+                "decision_reasons": json.loads(row.decision_reasons) if row.decision_reasons else [],
+                "matched_rules": json.loads(row.matched_rules) if row.matched_rules else [],
+                "safety_blocks": json.loads(row.safety_blocks) if row.safety_blocks else [],
+                "response_profile": json.loads(row.response_profile) if row.response_profile else {},
             })
+
         return incidents
     finally:
         db.close()

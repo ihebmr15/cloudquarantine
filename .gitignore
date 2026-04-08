@@ -16,3 +16,17 @@ evidence/incidents/*
 !evidence/incidents/.gitkeep
 evidence/exports/*
 !evidence/exports/.gitkeep
+# Node
+node_modules/
+build/
+
+# Kubernetes / secrets
+*.key
+*.crt
+*.pem
+*.env
+secrets.yaml
+
+# OS
+.DS_Store
+Thumbs.db

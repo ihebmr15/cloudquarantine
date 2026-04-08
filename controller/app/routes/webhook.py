@@ -13,6 +13,34 @@ from app.utils.dedup import is_duplicate_event, has_k8s_metadata
 router = APIRouter(tags=["webhook"])
 
 
+def is_noise_event(payload: dict) -> bool:
+    fields = payload.get("output_fields", {}) or {}
+
+    pod = fields.get("k8s.pod.name")
+    namespace = fields.get("k8s.ns.name")
+    container = fields.get("container.name")
+    rule = payload.get("rule", "")
+
+    # 1. Drop events without K8s metadata
+    if not pod or not namespace:
+        return True
+
+    # 2. Drop controller itself
+    if "cloudquarantine-controller" in pod:
+        return True
+
+    if container == "controller":
+        return True
+
+    # 3. Drop system namespaces
+    if namespace in ["default", "kube-system", "kube-public", "security-monitoring"]:
+        return True
+
+    # 4. Drop K8s API communication noise
+    if rule == "Contact K8S API Server From Container":
+        return True
+
+    return False
 @router.post("/webhook/falco")
 async def falco_webhook(payload: dict) -> dict:
     print("\n============================")
@@ -21,6 +49,20 @@ async def falco_webhook(payload: dict) -> dict:
     print("Payload:")
     print(pformat(payload, sort_dicts=False))
 
+    # 🚨 FIRST: FILTER (must be FIRST)
+    if is_noise_event(payload):
+        print("\n[FILTER] Ignored noise event")
+        print("============================\n")
+        return {"status": "ignored"}
+
+    # 🚨 SECOND: DEDUP
+    if is_duplicate_event(payload):
+        print("\n[DEDUP] Duplicate event skipped")
+        print("============================\n")
+        return {"status": "duplicate"}
+
+    # THEN decision engine
+    decision = evaluate_event(payload)
     if is_duplicate_event(payload):
         print("\n[DEDUP] Duplicate event skipped")
         print("============================\n")

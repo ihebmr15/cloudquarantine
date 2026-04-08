@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudquarantine-controller
+  labels:
+    app: cloudquarantine-controller
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: cloudquarantine-controller
+  template:
+    metadata:
+      labels:
+        app: cloudquarantine-controller
+    spec:
+      serviceAccountName: cloudquarantine-sa
+      containers:
+        - name: controller
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APP_NAME
+              value: "{{ .Values.env.APP_NAME }}"
+            - name: APP_ENV
+              value: "{{ .Values.env.APP_ENV }}"
+            - name: RESPONSE_MODE
+              value: "{{ .Values.env.RESPONSE_MODE }}"
+            - name: TELEGRAM_CHAT_ID
+              value: "{{ .Values.env.TELEGRAM_CHAT_ID }}"
+            - name: DATABASE_URL
+              value: "{{ .Values.env.DATABASE_URL }}"
+            - name: CQ_POLICY_PATH
+              value: "{{ .Values.env.CQ_POLICY_PATH }}"
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudquarantine-secrets
+                  key: TELEGRAM_BOT_TOKEN
+          volumeMounts:
+            - name: policy-volume
+              mountPath: /app/policies
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+{{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: policy-volume
+          configMap:
+            name: cloudquarantine-policy

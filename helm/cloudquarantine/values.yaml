@@ -1,0 +1,125 @@
+replicaCount: 1
+
+image:
+  repository: cloudquarantine/controller
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+env:
+  APP_NAME: CloudQuarantine
+  APP_ENV: dev
+  RESPONSE_MODE: monitor
+  TELEGRAM_CHAT_ID: "7741970202"
+  DATABASE_URL: "postgresql://ihab:ihabpass@cq-postgres:5432/cloudquarantine"
+  CQ_POLICY_PATH: "/app/policies/cloudquarantine-policies.yaml"
+
+secretEnv:
+  TELEGRAM_BOT_TOKEN: ".."
+
+postgres:
+  enabled: true
+  image: postgres:16
+  db: cloudquarantine
+  user: ihab
+  password: ihabpass
+  port: 5432
+
+policy:
+  filename: cloudquarantine-policies.yaml
+  content: |
+    apiVersion: cloudquarantine.io/v1alpha1
+    kind: RuntimeResponsePolicy
+    metadata:
+      name: default-runtime-policy
+      version: "1.0.0"
+
+    spec:
+      scoring:
+        base_score: 0
+        max_score: 100
+        signals:
+          shell_spawned: 40
+          root_user: 20
+          execve: 15
+          privileged_container: 25
+          hostpath_mount: 20
+          secret_mount: 10
+          sensitive_service_account: 15
+          criticality_high: 20
+
+      namespace_rules:
+        - name: prod-rule
+          match:
+            names: ["prod", "production"]
+          score_boost: 30
+          default_action: auto_quarantine
+
+        - name: demo-rule
+          match:
+            names: ["dev", "demo", "demo-app"]
+          score_boost: 0
+          default_action: manual_review
+
+      workload_rules:
+        - name: high-criticality
+          match:
+            labels:
+              criticality: high
+          score_boost: 20
+          force_manual_review: true
+
+        - name: privileged-workload
+          match:
+            privileged: true
+          score_boost: 25
+
+        - name: hostpath-workload
+          match:
+            hostpath_used: true
+          score_boost: 20
+
+      safety_guards:
+        single_replica_requires_review: true
+        critical_workload_requires_review: true
+        allow_auto_quarantine_in_namespaces: ["prod", "production"]
+        deny_auto_quarantine_in_namespaces: ["kube-system", "monitoring", "falco"]
+
+      thresholds:
+        auto_quarantine: 85
+        manual_review: 50
+        alert_only: 20
+
+      response_profiles:
+        auto_quarantine:
+          label_pod: true
+          apply_network_policy: true
+          send_alert: true
+          persist_incident: true
+
+        manual_review:
+          label_pod: false
+          apply_network_policy: false
+          send_alert: true
+          persist_incident: true
+
+        alert_only:
+          label_pod: false
+          apply_network_policy: false
+          send_alert: true
+          persist_incident: true
+
+        dismiss:
+          label_pod: false
+          apply_network_policy: false
+          send_alert: false
+          persist_incident: false
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

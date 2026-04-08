@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudquarantine-config
+data:
+  APP_NAME: "{{ .Values.env.APP_NAME }}"
+  APP_ENV: "{{ .Values.env.APP_ENV }}"
+  RESPONSE_MODE: "{{ .Values.env.RESPONSE_MODE }}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudquarantine-policy
+data:
+  {{ .Values.policy.filename }}: |
+{{ .Values.policy.content | indent 4 }}

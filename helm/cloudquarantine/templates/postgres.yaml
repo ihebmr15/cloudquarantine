@@ -1,0 +1,28 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cq-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cq-postgres
+  template:
+    metadata:
+      labels:
+        app: cq-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - containerPort: {{ .Values.postgres.port }}
+          env:
+            - name: POSTGRES_DB
+              value: "{{ .Values.postgres.db }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.postgres.user }}"
+            - name: POSTGRES_PASSWORD
+              value: "{{ .Values.postgres.password }}"
+{{- end }}
