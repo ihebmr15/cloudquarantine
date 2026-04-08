@@ -18,7 +18,7 @@ env:
   CQ_POLICY_PATH: "/app/policies/cloudquarantine-policies.yaml"
 
 secretEnv:
-  TELEGRAM_BOT_TOKEN: ".."
+  TELEGRAM_BOT_TOKEN: "8742109924:AAEGnlvIoPggmp9pTDXv_fhJewg6EotL-rc"
 
 postgres:
   enabled: true

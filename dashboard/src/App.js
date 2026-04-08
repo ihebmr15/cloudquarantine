@@ -1,5 +1,41 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getIncidents } from "./api";
+import { getIncidents, approveIncident, rejectIncident } from "./api";
+
+function renderAIInsights(ai) {
+  if (!ai) return [];
+
+  const insights = [];
+
+  if (ai.pod_event_count >= 3) {
+    insights.push(`Repeated activity detected on same pod (${ai.pod_event_count} events)`);
+  }
+
+  if (ai.namespace_event_count >= 3) {
+    insights.push(`Namespace shows suspicious activity (${ai.namespace_event_count} events)`);
+  }
+
+  if (ai.repeated_after_quarantine) {
+    insights.push("Activity detected after quarantine (high risk)");
+  } else {
+    insights.push("No post-quarantine activity detected");
+  }
+
+  return insights;
+}
+
+function prettyMode(mode) {
+  if (!mode) return "unknown";
+  return mode
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function prettyApprovalState(state) {
+  if (state === "waiting") return "🟡 waiting";
+  if (state === "approved") return "🟢 approved";
+  if (state === "rejected") return "🔴 rejected";
+  return state || "unknown";
+}
 
 function severityColor(severity) {
   switch ((severity || "").toLowerCase()) {
@@ -42,6 +78,7 @@ function badgeStyle(color) {
     backgroundColor: color,
     fontSize: "12px",
     fontWeight: "bold",
+    lineHeight: 1.2,
   };
 }
 
@@ -54,6 +91,7 @@ function cardStyle(selected) {
     background: "white",
     boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
     cursor: "pointer",
+    transition: "all 0.15s ease",
   };
 }
 
@@ -107,6 +145,26 @@ function StatCard({ label, value }) {
   );
 }
 
+function JsonBlock({ data }) {
+  return (
+    <pre
+      style={{
+        background: "#111827",
+        color: "#f9fafb",
+        padding: "14px",
+        borderRadius: "10px",
+        overflowX: "auto",
+        fontSize: "12px",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        margin: 0,
+      }}
+    >
+      {prettyJson(data || {})}
+    </pre>
+  );
+}
+
 export default function App() {
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
@@ -146,23 +204,11 @@ export default function App() {
     }
   }
 
-  async function approveIncident(incidentId) {
+  async function handleApprove(incidentId) {
     try {
       setActionLoading(true);
       setError("");
-
-      const response = await fetch(
-        `http://localhost:8000/api/v1/incidents/${incidentId}/approve`,
-        {
-          method: "POST",
-        }
-      );
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Approve failed: ${text}`);
-      }
-
+      await approveIncident(incidentId);
       await loadIncidents(true);
     } catch (err) {
       setError(err.message || "Failed to approve incident");
@@ -171,23 +217,11 @@ export default function App() {
     }
   }
 
-  async function rejectIncident(incidentId) {
+  async function handleReject(incidentId) {
     try {
       setActionLoading(true);
       setError("");
-
-      const response = await fetch(
-        `http://localhost:8000/api/v1/incidents/${incidentId}/reject`,
-        {
-          method: "POST",
-        }
-      );
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Reject failed: ${text}`);
-      }
-
+      await rejectIncident(incidentId);
       await loadIncidents(true);
     } catch (err) {
       setError(err.message || "Failed to reject incident");
@@ -222,8 +256,8 @@ export default function App() {
     return incidents.filter((incident) => {
       const status = (incident.status || "").toLowerCase();
       const severity = (
-        incident.decision?.severity ||
-        incident.severity ||
+        incident?.decision?.severity ||
+        incident?.severity ||
         ""
       ).toLowerCase();
       const namespace =
@@ -260,7 +294,28 @@ export default function App() {
   const context = decision?.context || {};
   const workload = context?.workload_profile || {};
   const response = detail?.response || {};
+  const aiBehavior = decision?.ai_behavior || {};
+  const aiInsights = renderAIInsights(aiBehavior);
   const canReview = detail?.approval_state === "waiting";
+
+  let aiRiskAdjustment = 0;
+  const aiAdjustmentReasons = [];
+
+  if (aiBehavior?.pod_event_count >= 3) {
+    aiRiskAdjustment += 20;
+    aiAdjustmentReasons.push("repeated behavior");
+  }
+  if (aiBehavior?.namespace_event_count >= 5) {
+    aiRiskAdjustment += 15;
+    aiAdjustmentReasons.push("noisy namespace");
+  }
+  if (aiBehavior?.repeated_after_quarantine) {
+    aiRiskAdjustment += 30;
+    aiAdjustmentReasons.push("post-quarantine activity");
+  }
+
+  const aiAdjustmentLabel =
+    aiRiskAdjustment > 0 ? `+${aiRiskAdjustment} (${aiAdjustmentReasons.join(", ")})` : null;
 
   return (
     <div
@@ -278,6 +333,7 @@ export default function App() {
             justifyContent: "space-between",
             alignItems: "center",
             marginBottom: "22px",
+            gap: "16px",
           }}
         >
           <div>
@@ -285,7 +341,7 @@ export default function App() {
               CloudQuarantine Dashboard
             </h1>
             <p style={{ margin: "8px 0 0 0", color: "#6b7280" }}>
-              Runtime security incidents, policy decisions, and response actions
+              Runtime security incidents, policy decisions, response actions, and AI behavior analysis
             </p>
           </div>
 
@@ -299,7 +355,9 @@ export default function App() {
               borderRadius: "10px",
               padding: "10px 16px",
               fontWeight: "600",
-              cursor: "pointer",
+              cursor: refreshing ? "not-allowed" : "pointer",
+              opacity: refreshing ? 0.75 : 1,
+              minWidth: "110px",
             }}
           >
             {refreshing ? "Refreshing..." : "Refresh"}
@@ -540,58 +598,65 @@ export default function App() {
                   }}
                 >
                   <div><strong>Timestamp:</strong> {formatTimestamp(detail.timestamp)}</div>
-                  <div><strong>Score:</strong> {decision.score ?? "unknown"}</div>
+                  <div>
+                    <strong>Score:</strong> {decision.score ?? "unknown"}
+                    {aiAdjustmentLabel && (
+                      <span style={{ marginLeft: "10px", color: "#dc2626", fontWeight: "bold" }}>
+                        ({aiAdjustmentLabel} AI boost)
+                      </span>
+                    )}
+                  </div>
                   <div><strong>Policy:</strong> {decision.policy_name || "unknown"}</div>
                   <div><strong>Policy Version:</strong> {decision.policy_version || "unknown"}</div>
                   <div><strong>Namespace:</strong> {context.namespace || workload.namespace || "unknown"}</div>
                   <div><strong>Pod:</strong> {context.pod_name || workload.pod_name || "unknown"}</div>
-                  <div><strong>Mode:</strong> {decision.decision_mode || "unknown"}</div>
+                  <div><strong>Decision Mode:</strong> {prettyMode(decision.decision_mode)}</div>
                   <div><strong>Recommended Action:</strong> {decision.recommended_action || "unknown"}</div>
-                  <div><strong>Approval State:</strong> {detail.approval_state || "unknown"}</div>
+                  <div><strong>Approval State:</strong> {prettyApprovalState(detail.approval_state)}</div>
                   <div><strong>Approved Action:</strong> {detail.approved_action || "none"}</div>
                 </div>
 
-                <div style={{ display: "flex", gap: "10px", marginBottom: "18px" }}>
-                  <button
-                    onClick={() => approveIncident(detail.id)}
-                    disabled={!canReview || actionLoading}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#16a34a",
-                      color: "white",
-                      fontWeight: "700",
-                      opacity: !canReview || actionLoading ? 0.6 : 1,
-                      cursor: !canReview || actionLoading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {actionLoading ? "Working..." : "Approve"}
-                  </button>
+                {canReview ? (
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "18px" }}>
+                    <button
+                      onClick={() => handleApprove(detail.id)}
+                      disabled={actionLoading}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        border: "none",
+                        background: "#16a34a",
+                        color: "white",
+                        fontWeight: "700",
+                        opacity: actionLoading ? 0.6 : 1,
+                        cursor: actionLoading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {actionLoading ? "Working..." : "Approve"}
+                    </button>
 
-                  <button
-                    onClick={() => rejectIncident(detail.id)}
-                    disabled={!canReview || actionLoading}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "#dc2626",
-                      color: "white",
-                      fontWeight: "700",
-                      opacity: !canReview || actionLoading ? 0.6 : 1,
-                      cursor: !canReview || actionLoading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {actionLoading ? "Working..." : "Reject"}
-                  </button>
-
-                  {!canReview && (
-                    <div style={{ alignSelf: "center", color: "#6b7280", fontSize: "13px" }}>
-                      This incident is no longer waiting for manual review.
-                    </div>
-                  )}
-                </div>
+                    <button
+                      onClick={() => handleReject(detail.id)}
+                      disabled={actionLoading}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        border: "none",
+                        background: "#dc2626",
+                        color: "white",
+                        fontWeight: "700",
+                        opacity: actionLoading ? 0.6 : 1,
+                        cursor: actionLoading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {actionLoading ? "Working..." : "Reject"}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: "18px", color: "#6b7280", fontSize: "13px" }}>
+                    This incident is no longer waiting for manual review.
+                  </div>
+                )}
 
                 {sectionTitle("Reasons")}
                 <ul style={{ marginTop: 0, color: "#374151" }}>
@@ -607,61 +672,27 @@ export default function App() {
                   ))}
                 </ul>
 
+                {sectionTitle("AI Behavior")}
+                <div style={{ marginBottom: "10px" }}>
+                  {aiInsights.map((line, index) => (
+                    <div key={index} style={{ marginBottom: "6px", color: "#111827" }}>
+                      • {line}
+                    </div>
+                  ))}
+                </div>
+                <JsonBlock data={aiBehavior} />
+
                 {sectionTitle("Response Profile")}
-                <pre
-                  style={{
-                    background: "#111827",
-                    color: "#f9fafb",
-                    padding: "14px",
-                    borderRadius: "10px",
-                    overflowX: "auto",
-                    fontSize: "12px",
-                  }}
-                >
-                  {prettyJson(decision.response_profile || {})}
-                </pre>
+                <JsonBlock data={decision.response_profile || {}} />
 
                 {sectionTitle("Workload Context")}
-                <pre
-                  style={{
-                    background: "#111827",
-                    color: "#f9fafb",
-                    padding: "14px",
-                    borderRadius: "10px",
-                    overflowX: "auto",
-                    fontSize: "12px",
-                  }}
-                >
-                  {prettyJson(workload || {})}
-                </pre>
+                <JsonBlock data={workload || {}} />
 
                 {sectionTitle("Response Result")}
-                <pre
-                  style={{
-                    background: "#111827",
-                    color: "#f9fafb",
-                    padding: "14px",
-                    borderRadius: "10px",
-                    overflowX: "auto",
-                    fontSize: "12px",
-                  }}
-                >
-                  {prettyJson(response || {})}
-                </pre>
+                <JsonBlock data={response || {}} />
 
                 {sectionTitle("Original Event")}
-                <pre
-                  style={{
-                    background: "#111827",
-                    color: "#f9fafb",
-                    padding: "14px",
-                    borderRadius: "10px",
-                    overflowX: "auto",
-                    fontSize: "12px",
-                  }}
-                >
-                  {prettyJson(detail.event || {})}
-                </pre>
+                <JsonBlock data={detail.event || {}} />
               </>
             )}
           </div>
