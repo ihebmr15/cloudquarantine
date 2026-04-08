@@ -1,120 +1,217 @@
-# 🛡️ CloudQuarantine
-
-*Event‑driven Kubernetes security control plane for automatic threat detection, response, and forensic analysis*
-
-CloudQuarantine combines **Falco**, a risk‑aware **Decision Engine**, and Kubernetes‑native response playbooks to automatically detect, assess and respond to runtime attacks in your clusters.  It doesn’t just raise alerts—it **quarantines compromised pods**, applies **network policies** to isolate them, records detailed **forensic timelines**, and surfaces **AI‑derived insights** to guide manual review when needed.
-
+🛡️ CloudQuarantine
+Event-driven Kubernetes runtime security platform for detection, decision-making, automated response, and incident forensics.
+CloudQuarantine is a runtime security control plane designed for Kubernetes environments. It receives security events from Falco, evaluates their risk, enriches them with workload context and behavior analysis, then decides whether to log, alert, request manual approval, or automatically quarantine the affected workload.
+Instead of stopping at detection, CloudQuarantine turns runtime alerts into concrete security actions.
 ---
-
-## 🎯 Problem
-
-Modern Kubernetes environments typically rely on runtime detectors (e.g. Falco) that generate logs or alerts when suspicious behaviour occurs.  However:
-
-* **Threats are detected… but not contained** — malicious processes continue to run until a human intervenes.
-* **Alerts are overwhelming** — security teams struggle to prioritise which events matter most.
-* **No clear forensic record** — responding to incidents is harder without a timeline of actions.
-
-These gaps lead to delayed response, lateral movement, and limited visibility into what happened.
-
+🎯 Why CloudQuarantine?
+Runtime security tools often detect suspicious activity but leave the response to humans. That creates a gap between detection and containment.
+CloudQuarantine closes that gap by adding:
+Risk-based decision-making
+Behavior-aware scoring
+Automated quarantine workflows
+Manual review when automation is risky
+Forensic visibility for every incident
+This makes it useful not only as a detection layer, but as a lightweight runtime security platform.
 ---
-
-## 💡 Solution
-
-CloudQuarantine orchestrates detection, risk scoring and response in a single workflow:
-
-1. **Falco** monitors syscalls and emits detailed events.
-2. **Falcosidekick** forwards those events to the CloudQuarantine controller.
-3. The **Decision Engine** evaluates severity using policy thresholds, workload context and AI‑driven insights (e.g. repeated pod activity, namespace anomaly).
-4. According to the policy it chooses one of three modes:
-
-   * **Automatic quarantine** — label pod and enforce a “deny‑all” `NetworkPolicy`.
-   * **Manual review** — alert only; operator approves before quarantining.
-   * **Dismiss** — log and move on.
-5. **Forensics** — all events, decisions and responses are stored; a timeline API visualises them.
-6. A **Dashboard** surfaces incidents, highlights risk scores, AI explanations and approval status, and provides “Approve / Reject” actions for manual review.
-
-This tight feedback loop turns runtime alerts into automated actions with an audit trail.
-
+💡 What it does
+CloudQuarantine can:
+Detect suspicious container activity through Falco
+Normalize and process runtime events
+Score incidents using a policy-driven decision engine
+Enrich decisions with AI-style behavior analysis
+Trigger automatic quarantine for high-risk workloads
+Support manual approval for medium-risk incidents
+Isolate pods with labels + NetworkPolicy
+Scale Deployments to zero in critical scenarios
+Store incidents for forensic analysis
+Show incidents and decisions in a dashboard
+Send Telegram alerts in real time
 ---
-
-## 🧠 Architecture
-
+🧠 Core Concept
+```text
+Falco = detection
+CloudQuarantine = detection + decision + response + forensics
+```
+CloudQuarantine does not only ask “Was something suspicious?”  
+It also asks:
+How risky is it?
+Is this happening repeatedly?
+Is this in production?
+Should the system act automatically or wait for approval?
+---
+⚙️ High-Level Architecture
 ```text
 Falco (Runtime Detection)
         ↓
 Falcosidekick (Event Routing)
         ↓
-FastAPI Controller (Control Plane)
+CloudQuarantine Controller (FastAPI)
         ↓
-Decision Engine (Risk Scoring & AI insights)
+Decision Engine (Risk Scoring)
+        ↓
+AI Behavior Layer (Repetition + Context)
         ↓
 Response Engine (Playbooks)
         ↓
 Kubernetes API
         ↓
-NetworkPolicy Isolation
+Isolation / Quarantine / Scaling
         ↓
-Forensics Store + Timeline API
-        ↓
-Dashboard UI & Notifications
+Forensics Store + Dashboard + Alerts
 ```
-
-* **Falco**: Detects syscall anomalies and known TTPs (mapped to MITRE ATT&CK).
-* **Decision Engine**: Scores events based on configurable thresholds, workload profile (privileged containers, hostPath usage, secrets mounts, etc.), policy rules, and AI‑derived context (e.g. repeated behaviour after quarantine).
-* **Response Engine**: Executes playbooks: label pod, apply `NetworkPolicy`, scale deployment to zero (advanced quarantine), or simply log/alert for manual review.
-* **Forensics**: Stores incidents in a database (PostgreSQL); provides timeline API for analysis.
-* **Dashboard**: Single‑page React application to review incidents, approve or reject actions, and see AI insights.
-* **Notifications**: Integrates with Telegram (and easily extendable to Slack, email) to send incident summaries.
-
 ---
-
-## ⚡ Features
-
-* 🔍 **Runtime threat detection** with Falco and MITRE ATT&CK mapping.
-* 🧠 **Risk‑based decision engine** — customisable thresholds and workload rules (criticality, namespaces, etc.).
-* 🤖 **AI layer** surfaces patterns like repeated pod activity or namespace anomalies and adjusts risk (+20 by default).
-* ⚡ **Automated response playbooks**: label pods, apply network isolation, scale deployments.
-* 🔐 **Kubernetes‑native quarantine** — uses labels and `NetworkPolicy` for isolation; safe for single or multiple replicas.
-* 👁 **Manual approval workflow** for medium‑risk events; reviewers can approve or reject quarantine actions.
-* 📊 **Incident forensics API** with human‑readable timeline generation.
-* 🎛 **Dashboard** with filtering (status, severity, namespace), AI explanations, risk score adjustments, and approval state icons.
-* 📦 **CI/CD security validation** — includes GitHub Actions workflows to lint charts and build/push images.
-* 🔁 **Event‑driven architecture** — integrates seamlessly with Falco & Falcosidekick.
-
+⚡ Key Features
+Runtime Threat Detection
+Detects shell execution inside containers
+Detects suspicious root activity
+Processes Falco runtime events in real time
+Risk-Based Decision Engine
+Policy-based scoring
+Context-aware evaluation using:
+namespace
+workload type
+criticality
+mounts and privileges
+Clear decision modes:
+log only
+manual review
+automatic quarantine
+Behavior Analysis Layer
+Tracks repeated activity on the same pod
+Tracks anomaly patterns at namespace level
+Increases score when suspicious behavior repeats
+Makes decisions more adaptive than static rules alone
+Automated Response
+Label compromised pod as quarantined
+Apply deny-all `NetworkPolicy`
+Scale owning `Deployment` to zero when needed
+Preserve a response trail for review
+Manual Approval Workflow
+Some incidents are intentionally not auto-contained
+Operators can approve or reject actions from the dashboard
+Dashboard
+Incident list with filters
+Severity and status badges
+Score, reasons, and matched rules
+AI behavior insights
+Response result details
+Approve / Reject actions for pending incidents
+Alerting
+Telegram notifications for real-time incident awareness
+Forensics
+Incident persistence
+Timeline generation
+Raw event visibility for investigation
 ---
-
-## 🌍 Use Cases
-
-* SaaS platforms running multi‑tenant Kubernetes clusters.
-* Fintech or regulated environments with sensitive workloads.
-* Cloud‑native startups needing automated runtime security.
-* Teams adopting DevSecOps and seeking to close the loop between detection and response.
-
+🤖 AI / Behavior Layer
+CloudQuarantine includes a lightweight behavior analysis layer that improves scoring.
+It looks at patterns such as:
+repeated suspicious activity on the same pod
+repeated suspicious activity inside the same namespace
+activity continuing after previous containment
+This means a single shell event may only require manual review, while repeated shell activity can raise the risk score and push the system toward stronger containment.
+Example:
+First shell in `demo-app` → medium risk → manual review
+Repeated shells in same pod → score increases
+Same action in `prod` → automatic quarantine
+Same action on a Deployment-backed workload → deployment scaled to zero
 ---
-
-## 🚀 Future Improvements
-
-* Slack alerting (currently supports Telegram).
-* Multi‑cluster control plane & centralised forensics.
-* Advanced policy engines (OPA, Kyverno) integration.
-* Replay & simulation mode for training and testing.
-* Persistent storage pluggable back‑ends (e.g. NoSQL).
-
+🔒 Quarantine Capabilities
+Depending on policy and workload type, CloudQuarantine can perform:
+Pod labeling
+marks the affected pod as quarantined
+Network isolation
+applies a deny-all NetworkPolicy to block communication
+Deployment containment
+resolves ReplicaSet → Deployment ownership
+scales the workload to zero for stronger containment
+These actions are designed to be Kubernetes-native and easy to audit.
 ---
-
-## 👨‍💻 Author
-
-Built by **Iheb Mrabet** – DevSecOps engineer .
-
+📊 Incident Lifecycle
+A typical incident goes through this flow:
+Falco detects suspicious behavior
+Falcosidekick forwards the event
+CloudQuarantine normalizes the payload
+Noise and duplicates are filtered
+Workload context is collected
+Risk score is calculated
+Behavior analysis adjusts the score if necessary
+Decision is made:
+log
+manual review
+automatic quarantine
+Response is executed
+Incident is stored and shown in the dashboard
+Telegram alert is sent if configured
 ---
-
-## ⭐ Final Note
-
-This project demonstrates:
-
-✔ Real‑world DevSecOps architecture
-✔ Security automation & incident response
-✔ Deep Kubernetes understanding
-✔ Event‑driven systems
-
-It’s designed as a **mini security platform**, not just a demo.  Contributions and feedback are welcome!
+🧪 Example Demo Scenarios
+1. Manual Review Scenario
+Trigger a shell inside a pod in a non-production namespace:
+```bash
+kubectl exec -it test-shell -n demo-app -- sh
+```
+Expected result:
+incident appears in dashboard
+medium risk score
+decision mode = manual review
+operator can approve or reject
+2. Automatic Quarantine Scenario
+Trigger the same type of event in production:
+```bash
+kubectl exec -it test-shell -n prod -- sh
+```
+Expected result:
+high risk score
+automatic quarantine
+pod labeled and network isolated
+3. Deployment Containment Scenario
+Trigger a shell inside a Deployment-backed pod:
+```bash
+kubectl exec -it <nginx-pod> -n prod -- sh
+```
+Expected result:
+deployment owner resolved
+deployment scaled to zero
+incident stored with full response details
+---
+📦 Tech Stack
+Kubernetes (k3d)
+Falco
+Falcosidekick
+FastAPI
+React
+PostgreSQL
+Helm
+Telegram Bot API
+---
+🌍 Use Cases
+CloudQuarantine is useful in environments such as:
+SaaS platforms running Kubernetes
+Cloud-native startups
+Fintech / regulated workloads
+Multi-tenant clusters
+DevSecOps labs and automation workflows
+Runtime security demonstrations and research
+---
+🚀 Roadmap / Future Improvements
+Potential next steps include:
+Slack / Teams alerting
+Multi-cluster control plane
+Richer policy engine integration (OPA / Kyverno)
+Incident replay mode
+More advanced anomaly detection
+Screenshot-rich dashboard analytics
+Role-based access to approval workflows
+---
+👨‍💻 Author
+Iheb Mrabet  
+Aspiring DevSecOps Engineer
+---
+⭐ Final Note
+CloudQuarantine was built to behave like a small runtime security platform, not just a detection demo.
+It demonstrates:
+Kubernetes runtime security understanding
+Risk-based automation
+Incident response design
+Behavior-aware detection
+Full-stack DevSecOps thinking
