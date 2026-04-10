@@ -264,3 +264,18 @@ It demonstrates:
 - Incident response design
 - Behavior-aware detection
 - Full-stack DevSecOps thinking
+
+## 📸 Screenshots
+
+### Dashboard Overview
+![Dashboard Overview](docs/screenshots/cleandashboard.png)
+
+### Incident Details
+![Incident Details](docs/screenshots/dashboard3.png)
+
+### Deployment Containment
+![Deployment Containment](docs/screenshots/scaled-to-zero.png)
+
+## 🎥 Demo Video
+
+[Download Demo Video](docs/demo/demo.mp4)
